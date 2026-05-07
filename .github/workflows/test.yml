@@ -1,0 +1,57 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  bash:
+    name: bash on ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run bash tests
+        shell: bash
+        run: |
+          bash tests/test-mvln.bash
+          rc=$?
+          echo "bash exit=$rc"
+          exit "$rc"
+
+  zsh:
+    name: zsh on ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install zsh (Ubuntu)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y zsh
+      - name: Run zsh tests
+        run: |
+          zsh tests/test-mvln.zsh
+          rc=$?
+          echo "zsh exit=$rc"
+          exit "$rc"
+
+  pwsh:
+    name: pwsh on ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run pwsh tests
+        shell: pwsh
+        run: pwsh -NoProfile -File tests/Test-MoveAsLink.ps1
