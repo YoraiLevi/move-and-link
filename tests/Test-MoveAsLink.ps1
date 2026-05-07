@@ -49,7 +49,9 @@ try {
         New-Item -ItemType Directory -Path $d -Force | Out-Null
         Set-Location $d
         [Environment]::CurrentDirectory = $d
-        return $d
+        # On macOS, /var is a symlink to /private/var; getcwd() returns the canonical form
+        # after chdir(). Return that canonical form so assertions match Move-AsLink's output.
+        return [Environment]::CurrentDirectory
     }
 
     $onWindows = ($IsWindows -or $env:OS -eq 'Windows_NT')
