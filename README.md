@@ -203,12 +203,21 @@ Move-AsLink .\dist E:\cdn-staging\my-app-dist -Resolve
 - **`ln -sn`** (used internally) is a no-deref symlink create. We deliberately do not
   pass `-f` so a post-`mv` race that recreates the source path will surface as an error
   rather than blow it away; the function will then attempt a reverse `mv` rollback.
+- **Shell function overrides (bash/zsh)**: if your shell config wraps common commands like
+  `cd`, `pwd`, `ls`, `dirname`, or `basename` with functions that print extra output (e.g.
+  `cd() { builtin cd "$@" && ls; }`), those functions are inherited by `$(...)` subshells
+  and their extra stdout gets captured alongside the real output, corrupting internal path
+  variables. `mvln` guards against this with `builtin cd`, `builtin pwd`, and `command ls`
+  / `command dirname` / `command basename`. If you see a garbled path in an error message
+  that looks like a directory listing, a shell function override is the likely cause.
+  PowerShell is not affected: path resolution there uses `[IO.Path]` static methods which
+  cannot be overridden.
 
 </details>
 
 ## Tests
 
-CI runs ~17 edge cases across `bash`, `zsh`, and `pwsh` on Ubuntu, macOS, and Windows,
+CI runs ~21 edge cases across `bash`, `zsh`, and `pwsh` on Ubuntu, macOS, and Windows,
 including a Linux cross-filesystem (`/dev/shm` tmpfs) case and (on Windows) a
 partial-removal-with-open-handle case.
 

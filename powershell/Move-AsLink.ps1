@@ -32,7 +32,7 @@ function Move-AsLink {
 
     function ToAbs([string] $p) {
         if ([IO.Path]::IsPathRooted($p)) { [IO.Path]::GetFullPath($p) }
-        else { [IO.Path]::GetFullPath((Join-Path $cwd $p)) }
+        else { [IO.Path]::GetFullPath([IO.Path]::Combine($cwd, $p)) }
     }
     function ResolveParent([string] $parentRaw) {
         $abs = ToAbs $parentRaw
@@ -46,19 +46,19 @@ function Move-AsLink {
     # --- 1. Existence (handles dangling-symlink source on Win PS 5.1) ---
     if (-not (Test-Path -LiteralPath $Path) -and `
         -not (Get-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue)) {
-        $parent = Split-Path -Parent $Path
+        $parent = [IO.Path]::GetDirectoryName($Path)
         if ([string]::IsNullOrEmpty($parent)) { $parent = $cwd }
-        $leaf   = Split-Path -Leaf $Path
+        $leaf   = [IO.Path]::GetFileName($Path)
         $entry  = Get-ChildItem -LiteralPath $parent -Force -ErrorAction SilentlyContinue |
                     Where-Object { $_.Name -eq $leaf } | Select-Object -First 1
         if (-not $entry) { throw "Move-AsLink: source does not exist: $Path" }
     }
 
-    $srcParentRaw = Split-Path -Parent $Path
+    $srcParentRaw = [IO.Path]::GetDirectoryName($Path)
     if ([string]::IsNullOrEmpty($srcParentRaw)) { $srcParentRaw = $cwd }
     $srcParentAbs = ResolveParent $srcParentRaw
-    $srcLeaf      = Split-Path -Leaf $Path
-    $srcAbs       = [IO.Path]::GetFullPath((Join-Path $srcParentAbs $srcLeaf))
+    $srcLeaf      = [IO.Path]::GetFileName($Path)
+    $srcAbs       = [IO.Path]::GetFullPath([IO.Path]::Combine($srcParentAbs, $srcLeaf))
 
     # --- 2. Trailing-separator destination => container intent ---
     $endsWithSep = $Destination.EndsWith('/') -or $Destination.EndsWith('\')
@@ -69,17 +69,17 @@ function Move-AsLink {
     }
     $dstFinal = $Destination
     if ($endsWithSep -or $isExistingRealDir) {
-        $dstFinal = (Join-Path ($Destination.TrimEnd('/','\')) $srcLeaf)
+        $dstFinal = [IO.Path]::Combine($Destination.TrimEnd('/','\'), $srcLeaf)
     }
 
     # --- 3. Resolve destination ---
-    $dstParentRaw = Split-Path -Parent $dstFinal
+    $dstParentRaw = [IO.Path]::GetDirectoryName($dstFinal)
     if ([string]::IsNullOrEmpty($dstParentRaw)) { $dstParentRaw = $cwd }
     if (-not (Test-Path -LiteralPath $dstParentRaw)) {
         New-Item -ItemType Directory -Path $dstParentRaw -Force -ErrorAction Stop | Out-Null
     }
     $dstParentAbs = ResolveParent $dstParentRaw
-    $dstAbs       = [IO.Path]::GetFullPath((Join-Path $dstParentAbs (Split-Path -Leaf $dstFinal)))
+    $dstAbs       = [IO.Path]::GetFullPath([IO.Path]::Combine($dstParentAbs, [IO.Path]::GetFileName($dstFinal)))
 
     # --- 4. Same-path guard (case-insensitive on Windows) ---
     $samePath = if ($IsWindows -or $env:OS -eq 'Windows_NT') { $srcAbs -ieq $dstAbs }
@@ -104,7 +104,7 @@ function Move-AsLink {
     }
 
     # --- 6. Pre-flight symlink probe at source's parent ---
-    $probe = Join-Path $srcParentAbs (".mvln-probe.{0}" -f ([guid]::NewGuid().ToString('N')))
+    $probe = [IO.Path]::Combine($srcParentAbs, ".mvln-probe.$([guid]::NewGuid().ToString('N'))")
     try {
         New-Item -ItemType SymbolicLink -Path $probe -Target $dstAbs -ErrorAction Stop | Out-Null
         Remove-Item -LiteralPath $probe -Force -ErrorAction SilentlyContinue
