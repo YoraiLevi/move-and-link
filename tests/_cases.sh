@@ -156,3 +156,13 @@ if [ -n "$XFS_ROOT" ]; then
     && ok || fail "cross-fs move broken"
   rm -rf "$XFS_ROOT"
 fi
+
+# 21. Custom cd function with side effects does not corrupt path resolution
+it "21. custom cd function with ls side effect does not corrupt src_dir"
+d="$(case_dir 21)"; cd "$d"; printf '1\n' > a.txt
+cd() { builtin cd "$@" && ls; }
+mvln a.txt store/a.txt >/dev/null
+rc=$?
+unset -f cd
+[ "$rc" -eq 0 ] && [ -L a.txt ] && [ "$(readlink a.txt)" = "$d/store/a.txt" ] \
+  && ok || fail "custom cd side effect corrupted path resolution (rc=$rc)"
