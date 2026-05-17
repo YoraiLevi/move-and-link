@@ -366,6 +366,47 @@ try {
         ShouldEq (Get-Content (Join-Path $d 'dir\original-file')) 'hello'
     } -skip (-not $canSymlink)
 
+    # --- Trailing-slash-on-source cases (36-38) ---
+    # The user-typed shape Move-AsLink .\srcdir\ .\bagdir\ should behave
+    # identically to Move-AsLink .\srcdir .\bagdir\ (the trailing slash on the
+    # source is a no-op signal of "this is a directory" that we strip).
+
+    It '36. dir source with trailing slash + existing dir target with trailing slash nests' {
+        $d = NewCase '36'
+        New-Item -ItemType Directory srcdir | Out-Null
+        'a' | Set-Content srcdir\inner
+        New-Item -ItemType Directory bagdir | Out-Null
+        Move-AsLink .\srcdir\ .\bagdir\ | Out-Null
+        ShouldEq (LinkType (Join-Path $d 'srcdir')) 'SymbolicLink'
+        ShouldEq (LinkTarget (Join-Path $d 'srcdir')) (Join-Path $d 'bagdir\srcdir')
+        if (-not (Test-Path (Join-Path $d 'bagdir\srcdir\inner'))) {
+            throw 'missing bagdir\srcdir\inner'
+        }
+    } -skip (-not $canSymlink)
+
+    It '37. dir source with trailing slash + exact new name dest renames' {
+        $d = NewCase '37'
+        New-Item -ItemType Directory srcdir | Out-Null
+        'b' | Set-Content srcdir\inner
+        Move-AsLink .\srcdir\ .\newname | Out-Null
+        ShouldEq (LinkType (Join-Path $d 'srcdir')) 'SymbolicLink'
+        ShouldEq (LinkTarget (Join-Path $d 'srcdir')) (Join-Path $d 'newname')
+        if (Test-Path (Join-Path $d 'newname\srcdir')) { throw 'unexpected newname\srcdir' }
+        if (-not (Test-Path (Join-Path $d 'newname\inner'))) { throw 'missing newname\inner' }
+    } -skip (-not $canSymlink)
+
+    It '38. dir source with trailing slash + non-existent dest with trailing slash nests' {
+        $d = NewCase '38'
+        New-Item -ItemType Directory srcdir | Out-Null
+        'c' | Set-Content srcdir\inner
+        Move-AsLink .\srcdir\ .\newbag\ | Out-Null
+        ShouldEq (LinkType (Join-Path $d 'srcdir')) 'SymbolicLink'
+        ShouldEq (LinkTarget (Join-Path $d 'srcdir')) (Join-Path $d 'newbag\srcdir')
+        if (-not (Test-Path (Join-Path $d 'newbag\srcdir\inner'))) {
+            throw 'missing newbag\srcdir\inner'
+        }
+    } -skip (-not $canSymlink)
+
 } finally {
     Set-Location $origCwd
     if (Test-Path $root) { Remove-Item -Recurse -Force $root -ErrorAction SilentlyContinue }

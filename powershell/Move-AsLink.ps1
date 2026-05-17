@@ -66,6 +66,14 @@ function Move-AsLink {
         if (-not $entry) { throw "Move-AsLink: source does not exist: $Path" }
     }
 
+    # Strip trailing separator from the source so [IO.Path]::GetFileName returns
+    # the actual leaf (not empty). Without this, "Move-AsLink .\foo\ .\bag\"
+    # leaves srcLeaf empty, which then breaks container-mode destination
+    # resolution (basename-append concatenates "" instead of "foo", producing
+    # .\bag instead of .\bag\foo). Mirrors mvln.sh:50-51. The helper correctly
+    # preserves root paths (C:\, /).
+    $Path = [IO.Path]::TrimEndingDirectorySeparator($Path)
+
     $srcParentRaw = [IO.Path]::GetDirectoryName($Path)
     if ([string]::IsNullOrEmpty($srcParentRaw)) { $srcParentRaw = $cwd }
     $srcParentAbs = ResolveParent $srcParentRaw

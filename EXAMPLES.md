@@ -86,7 +86,19 @@ Move-AsLink .\static D:\cdn\static
 ```
 **Result:** the function uses the directory you're *currently* in — the one shown in your prompt — not the directory PowerShell was started from. (This was a bug in pwsh until commit `ca7a5c7`.) `[cases 28, 29, 30, 35]`
 
-### 1.8 After `Push-Location` (pwsh)
+### 1.8 Trailing separator on source (silently stripped)
+
+```bash
+mvln ./srcdir/ ./bagdir/         # equivalent to: mvln ./srcdir ./bagdir/
+mvln .\.claude\skills\ .\.agents\claude\
+```
+```powershell
+Move-AsLink .\srcdir\ .\bagdir\          # equivalent to: Move-AsLink .\srcdir .\bagdir\
+Move-AsLink .\.claude\skills\ .\.agents\claude\
+```
+**Result:** a trailing `/` (or `\` on Windows pwsh) on the source is a no-op signal of "this is a directory" — it's stripped before basename extraction so destination resolution behaves identically to the no-trailing-slash form. Particularly relevant when your shell's tab-completion adds a trailing separator after directory names. `[cases 36, 37, 38]`
+
+### 1.9 After `Push-Location` (pwsh)
 
 ```powershell
 Push-Location C:\projects\site
@@ -461,6 +473,9 @@ Move-AsLink -Bogus a b
 | 33   | (E) Parent-directory references (`..`)                           |
 | 34   | (F) Absolute source path without harness cwd sync                |
 | 35   | (G) `Push-Location` updates PSDrive cwd for relative resolution  |
+| 36   | Trailing slash on dir source + existing dir dest with trailing slash (nest) |
+| 37   | Trailing slash on dir source + exact new name dest (rename)      |
+| 38   | Trailing slash on dir source + non-existent dest with trailing slash (auto-create + nest) |
 
 ---
 

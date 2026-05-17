@@ -295,3 +295,32 @@ cd "$d"
 mvln ./original-file ./dir/ >/dev/null
 [ -L original-file ] && [ -f dir/original-file ] \
   && ok || fail "cd-away-then-back did not preserve resolution"
+
+# --- Trailing-slash-on-source cases (36-38) ---
+# Pin the same shapes as the pwsh trailing-slash-source tests. Bash already
+# strips trailing slashes from src (mvln.sh:50-51) so these should all pass
+# without further changes; the value is regression-pinning and shell parity.
+
+# 36. dir source with trailing slash + existing dir target with trailing slash nests
+it "36. dir source w/ trailing slash + existing dir target w/ trailing slash nests"
+d="$(case_dir 36)"; cd "$d"; mkdir srcdir && printf 'a\n' > srcdir/inner; mkdir bagdir
+mvln ./srcdir/ ./bagdir/ >/dev/null
+[ -L srcdir ] && [ -d bagdir/srcdir ] && [ -f bagdir/srcdir/inner ] \
+  && [ "$(readlink srcdir)" = "$d/bagdir/srcdir" ] \
+  && ok || fail "trailing-slash on src + existing dir target did not nest correctly"
+
+# 37. dir source with trailing slash + exact new name dest renames
+it "37. dir source w/ trailing slash + exact new name dest renames"
+d="$(case_dir 37)"; cd "$d"; mkdir srcdir && printf 'b\n' > srcdir/inner
+mvln ./srcdir/ ./newname >/dev/null
+[ -L srcdir ] && [ -d newname ] && [ -f newname/inner ] && [ ! -e newname/srcdir ] \
+  && [ "$(readlink srcdir)" = "$d/newname" ] \
+  && ok || fail "trailing-slash on src + exact new name did not rename"
+
+# 38. dir source with trailing slash + non-existent dest with trailing slash nests
+it "38. dir source w/ trailing slash + non-existent dest w/ trailing slash nests"
+d="$(case_dir 38)"; cd "$d"; mkdir srcdir && printf 'c\n' > srcdir/inner
+mvln ./srcdir/ ./newbag/ >/dev/null
+[ -L srcdir ] && [ -d newbag/srcdir ] && [ -f newbag/srcdir/inner ] \
+  && [ "$(readlink srcdir)" = "$d/newbag/srcdir" ] \
+  && ok || fail "trailing-slash on src + non-existent dest did not auto-create + nest"
