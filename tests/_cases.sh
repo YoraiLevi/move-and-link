@@ -324,3 +324,133 @@ mvln ./srcdir/ ./newbag/ >/dev/null
 [ -L srcdir ] && [ -d newbag/srcdir ] && [ -f newbag/srcdir/inner ] \
   && [ "$(readlink srcdir)" = "$d/newbag/srcdir" ] \
   && ok || fail "trailing-slash on src + non-existent dest did not auto-create + nest"
+
+# --- Gap-closure cases (39-57) ---
+# Pin behavior the coverage matrix flagged as untested (works-but-unguarded,
+# untested-uncertain, refused-but-untested, or by-design-rejected-but-unpinned).
+# Each case here was a "needs test" cell in the matrix that the response in
+# this PR closes.
+
+# 39. (A11) Path with spaces (quoted)
+it "39. path with spaces (quoted) works"
+d="$(case_dir 39)"; cd "$d"; printf 'x\n' > "my file.txt"
+mvln "my file.txt" "store/my file.txt" >/dev/null
+[ -L "my file.txt" ] && [ -f "store/my file.txt" ] \
+  && ok || fail "spaces broke resolution"
+
+# 40. (A12) Unicode in filename
+it "40. unicode filename works"
+d="$(case_dir 40)"; cd "$d"; printf 'x\n' > "café.txt"
+mvln "café.txt" "store/café.txt" >/dev/null
+[ -L "café.txt" ] && [ -f "store/café.txt" ] \
+  && ok || fail "unicode broke resolution"
+
+# 41. (A16) Hardlink as source moves like a regular file
+it "41. hardlink as source moves like a regular file"
+d="$(case_dir 41)"; cd "$d"; printf 'x\n' > realfile
+ln realfile hardlink
+mvln hardlink store/hardlink >/dev/null
+# Original 'realfile' inode is preserved (mvln only touched the 'hardlink' name).
+[ -L hardlink ] && [ -f store/hardlink ] && [ -f realfile ] \
+  && ok || fail "hardlink broken"
+
+# 42. (E1) Empty file
+it "42. empty file works"
+d="$(case_dir 42)"; cd "$d"; : > empty.txt
+mvln empty.txt store/empty.txt >/dev/null
+[ -L empty.txt ] && [ -f store/empty.txt ] && [ ! -s store/empty.txt ] \
+  && ok || fail "empty file broken"
+
+# 43. (E2) Empty directory
+it "43. empty directory works"
+d="$(case_dir 43)"; cd "$d"; mkdir empty-dir
+mvln empty-dir store/empty-dir >/dev/null
+[ -L empty-dir ] && [ -d store/empty-dir ] \
+  && ok || fail "empty dir broken"
+
+# 44. (B7) Dest exists as a symlink — refused without --force
+it "44. dest exists as symlink is refused without --force"
+d="$(case_dir 44)"; cd "$d"; printf 'src\n' > src.txt; printf 'other\n' > other.txt
+ln -s other.txt sym
+rc=$(catch mvln src.txt sym)
+[ "$rc" -ne 0 ] && [ -L sym ] && [ -f src.txt ] && [ ! -L src.txt ] \
+  && ok || fail "should refuse dest-as-symlink without --force"
+
+# 45. (G3) --force with same path is still refused (same-path check fires first)
+it "45. --force with same path is still refused"
+d="$(case_dir 45)"; cd "$d"; printf 'x\n' > a.txt
+rc=$(catch mvln -f a.txt ./a.txt)
+[ "$rc" -ne 0 ] && [ -f a.txt ] && [ ! -L a.txt ] \
+  && ok || fail "same-path check did not fire under --force"
+
+# 46. (G1) Source = parent of destination (self-referential, mv catches it)
+it "46. source = parent of dest is rejected"
+d="$(case_dir 46)"; cd "$d"; mkdir parent
+rc=$(catch mvln parent parent/child)
+[ "$rc" -ne 0 ] && [ -d parent ] && [ ! -L parent ] \
+  && ok || fail "parent->child self-referential not rejected"
+
+# 47. (G2) Source nested inside existing destination dir — basename collision -> same-path
+it "47. source nested inside existing dest dir collides via same-path check"
+d="$(case_dir 47)"; cd "$d"; mkdir bag; printf 'x\n' > bag/item
+rc=$(catch mvln bag/item bag)
+# After basename append, dst = bag/item which IS the source.
+[ "$rc" -ne 0 ] && [ -f bag/item ] && [ ! -L bag/item ] \
+  && ok || fail "child->parent same-path not detected"
+
+# 48. (A10) Glob source pattern is treated literally (no internal expansion)
+it "48. glob pattern in source resolves literally (no internal expansion)"
+d="$(case_dir 48)"; cd "$d"
+# Shell does NO glob expansion when nothing matches (nullglob off by default in
+# bash/zsh tests here). The bare '*.txt' is passed literally; existence check fails.
+rc=$(catch mvln '*.txt' 'store/literal.txt')
+[ "$rc" -ne 0 ] && ok || fail "literal glob should error"
+
+# 49. (A20) Whitespace-only source path is rejected
+it "49. whitespace-only source path is rejected"
+d="$(case_dir 49)"; cd "$d"
+rc=$(catch mvln " " "store/blank")
+[ "$rc" -ne 0 ] && ok || fail "whitespace-only source should error"
+
+# 50. Extra positional arguments rejected with exit 64
+it "50. extra positional arguments rejected with exit 64"
+d="$(case_dir 50)"; cd "$d"; printf 'x\n' > a.txt
+rc=$(catch mvln a.txt b.txt c.txt)
+[ "$rc" -eq 64 ] && ok || fail "extra args should exit 64, got $rc"
+
+# 51. (A5) Tilde-expanded source (parser-level expansion)
+it "51. tilde in source path is shell-expanded before mvln sees it"
+d="$(case_dir 51)"; cd "$d"
+saved_home="$HOME"
+export HOME="$d"
+printf 'x\n' > "$HOME/tilde.txt"
+mvln ~/tilde.txt ~/store/tilde.txt >/dev/null
+rc=$?
+export HOME="$saved_home"
+[ "$rc" -eq 0 ] && [ -L "$d/tilde.txt" ] && [ -f "$d/store/tilde.txt" ] \
+  && ok || fail "tilde-expanded source did not work"
+
+# 52. (A21) Filename containing a newline (POSIX edge case)
+it "52. filename containing newline works (POSIX edge case)"
+d="$(case_dir 52)"; cd "$d"
+weird="$(printf 'a\nb.txt')"
+printf 'x\n' > "$weird"
+mvln "$weird" "store/$weird" >/dev/null
+[ -L "$weird" ] && [ -f "store/$weird" ] \
+  && ok || fail "newline in filename broke"
+
+# 53. (C11) Flag combo: -f AND --resolve together
+it "53. -f and --resolve combined work together"
+d="$(case_dir 53)"; cd "$d"; mkdir real; ln -s real link
+printf 'orig\n' > link/a.txt
+printf 'old\n' > dest.txt
+( cd link && mvln -f --resolve a.txt "$d/dest.txt" >/dev/null )
+[ -L link/a.txt ] && [ "$(cat dest.txt)" = "orig" ] \
+  && ok || fail "flag combo broken"
+
+# 54-57: pwsh-only categories; documented here as parity placeholders only.
+# 54 = -Resolve pwsh (bash --resolve = case 19, already covered)
+# 55 = -WhatIf pwsh (no bash equivalent)
+# 56 = -Path/-Destination named params pwsh (no bash equivalent)
+# 57 = junction as source (Windows-only)
+# These are tested in Test-MoveAsLink.ps1 only; bash has no analog.

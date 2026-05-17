@@ -407,6 +407,208 @@ try {
         }
     } -skip (-not $canSymlink)
 
+    # --- Gap-closure cases (39-57) ---
+    # Pin behavior the coverage matrix flagged as untested. Some are pwsh-specific
+    # (junction, -WhatIf, named params, HKLM:\ refusal) and have no bash analog.
+
+    It '39. (A11) path with spaces (quoted) works' {
+        $d = NewCase '39'
+        'x' | Set-Content 'my file.txt'
+        Move-AsLink '.\my file.txt' '.\store\my file.txt' | Out-Null
+        ShouldEq (LinkType (Join-Path $d 'my file.txt')) 'SymbolicLink'
+        if (-not (Test-Path (Join-Path $d 'store\my file.txt'))) {
+            throw 'missing store\my file.txt'
+        }
+    } -skip (-not $canSymlink)
+
+    It '40. (A12) unicode filename works' {
+        $d = NewCase '40'
+        'x' | Set-Content 'café.txt'
+        Move-AsLink '.\café.txt' '.\store\café.txt' | Out-Null
+        ShouldEq (LinkType (Join-Path $d 'café.txt')) 'SymbolicLink'
+        if (-not (Test-Path (Join-Path $d 'store\café.txt'))) {
+            throw 'missing store\café.txt'
+        }
+    } -skip (-not $canSymlink)
+
+    It '41. (A16) hardlink as source moves like a regular file' {
+        $d = NewCase '41'
+        'x' | Set-Content realfile.txt
+        New-Item -ItemType HardLink -Path hardlink.txt -Target (Join-Path $d 'realfile.txt') | Out-Null
+        Move-AsLink .\hardlink.txt .\store\hardlink.txt | Out-Null
+        if (-not (Test-Path (Join-Path $d 'realfile.txt'))) {
+            throw 'realfile.txt should still exist (hardlinked content untouched)'
+        }
+        if (-not (Test-Path (Join-Path $d 'store\hardlink.txt'))) {
+            throw 'missing store\hardlink.txt'
+        }
+    } -skip (-not $canSymlink)
+
+    It '42. (E1) empty file works' {
+        $d = NewCase '42'
+        New-Item -ItemType File empty.txt | Out-Null
+        Move-AsLink .\empty.txt .\store\empty.txt | Out-Null
+        if (-not (Test-Path (Join-Path $d 'store\empty.txt'))) {
+            throw 'missing store\empty.txt'
+        }
+        $len = (Get-Item -LiteralPath (Join-Path $d 'store\empty.txt')).Length
+        if ($len -ne 0) { throw "expected empty file, got length $len" }
+    } -skip (-not $canSymlink)
+
+    It '43. (E2) empty directory works' {
+        $d = NewCase '43'
+        New-Item -ItemType Directory empty-dir | Out-Null
+        Move-AsLink .\empty-dir .\store\empty-dir | Out-Null
+        if (-not (Test-Path (Join-Path $d 'store\empty-dir'))) {
+            throw 'missing store\empty-dir'
+        }
+    } -skip (-not $canSymlink)
+
+    It '44. (B7) dest exists as symlink is refused without -Force' {
+        $d = NewCase '44'
+        'src' | Set-Content src.txt
+        'other' | Set-Content other.txt
+        New-Item -ItemType SymbolicLink -Path sym -Target (Join-Path $d 'other.txt') | Out-Null
+        ShouldThrow { Move-AsLink .\src.txt .\sym }
+        if (-not (Test-Path (Join-Path $d 'src.txt'))) { throw 'src.txt should still exist' }
+    } -skip (-not $canSymlink)
+
+    It '45. (G3) -Force with same path still refused (same-path check fires first)' {
+        $d = NewCase '45'
+        'x' | Set-Content a.txt
+        ShouldThrow { Move-AsLink .\a.txt .\a.txt -Force }
+        if (-not (Test-Path (Join-Path $d 'a.txt'))) { throw 'a.txt should still exist' }
+    }
+
+    It '46. (G1) source = parent of dest is rejected' {
+        NewCase '46' | Out-Null
+        New-Item -ItemType Directory parent | Out-Null
+        ShouldThrow { Move-AsLink .\parent .\parent\child }
+    } -skip (-not $canSymlink)
+
+    It '47. (G2) source nested inside dest dir collides via same-path check' {
+        NewCase '47' | Out-Null
+        New-Item -ItemType Directory bag | Out-Null
+        'x' | Set-Content bag\item
+        ShouldThrow { Move-AsLink .\bag\item .\bag }
+    } -skip (-not $canSymlink)
+
+    It '48. (A10) glob source pattern resolves literally (no expansion)' {
+        NewCase '48' | Out-Null
+        ShouldThrow { Move-AsLink '*.txt' 'store\literal.txt' }
+    }
+
+    It '49. (A20) whitespace-only source path is rejected' {
+        NewCase '49' | Out-Null
+        ShouldThrow { Move-AsLink ' ' 'store\blank' }
+    }
+
+    It '50. extra positional arguments rejected (same as 12b but explicit)' {
+        NewCase '50' | Out-Null
+        'x' | Set-Content a.txt
+        ShouldThrow { Move-AsLink a.txt b.txt c.txt }
+    }
+
+    It '51. (A5) tilde in source path is parser-expanded before function sees it' {
+        $d = NewCase '51'
+        $origHome = $env:USERPROFILE
+        $origHomeUnix = $env:HOME
+        try {
+            $env:USERPROFILE = $d
+            $env:HOME = $d
+            'x' | Set-Content (Join-Path $d 'tilde.txt')
+            # Pwsh's path provider resolves ~ via Get-PSDrive Home; this varies.
+            # Use Resolve-Path to confirm ~ maps to $d in this context, otherwise skip.
+            $tildeAbs = (Resolve-Path -Path '~/tilde.txt' -ErrorAction SilentlyContinue).Path
+            if ($tildeAbs -and ($tildeAbs -eq (Join-Path $d 'tilde.txt'))) {
+                Move-AsLink ~/tilde.txt (Join-Path $d 'store\tilde.txt') | Out-Null
+                if (-not (Test-Path (Join-Path $d 'store\tilde.txt'))) {
+                    throw 'missing store\tilde.txt'
+                }
+            }
+            # If pwsh's ~ didn't follow our env override, the test is effectively
+            # a no-op — pwsh's tilde resolution is provider-tied, not env-tied.
+        } finally {
+            $env:USERPROFILE = $origHome
+            $env:HOME = $origHomeUnix
+        }
+    } -skip (-not $canSymlink)
+
+    It '52. (C3b) -Resolve canonicalizes through a symlinked parent' {
+        $d = NewCase '52'
+        New-Item -ItemType Directory real | Out-Null
+        'orig' | Set-Content real\a.txt
+        New-Item -ItemType SymbolicLink -Path link -Target (Join-Path $d 'real') | Out-Null
+        Set-Location link
+        try {
+            Move-AsLink .\a.txt (Join-Path $d 'dest.txt') -Resolve | Out-Null
+        } finally { Set-Location $d }
+        if (-not (Test-Path (Join-Path $d 'dest.txt'))) {
+            throw 'missing dest.txt'
+        }
+    } -skip (-not $canSymlink)
+
+    It '53. (C6) -WhatIf does not actually move' {
+        $d = NewCase '53'
+        'hello' | Set-Content a.txt
+        Move-AsLink .\a.txt .\store\a.txt -WhatIf | Out-Null
+        # File should still be at original location and NOT yet a symlink.
+        $item = Get-Item -LiteralPath (Join-Path $d 'a.txt')
+        if ($item.LinkType -eq 'SymbolicLink') {
+            throw 'should not have created symlink under -WhatIf'
+        }
+        if (Test-Path (Join-Path $d 'store\a.txt')) {
+            throw 'should not have moved under -WhatIf'
+        }
+    }
+
+    It '54. (C8) named parameters -Path / -Destination work' {
+        $d = NewCase '54'
+        'x' | Set-Content a.txt
+        Move-AsLink -Path .\a.txt -Destination .\store\a.txt | Out-Null
+        ShouldEq (LinkType (Join-Path $d 'a.txt')) 'SymbolicLink'
+    } -skip (-not $canSymlink)
+
+    It '55. (C11) -Force AND -Resolve combined' {
+        $d = NewCase '55'
+        'new' | Set-Content a.txt
+        New-Item -ItemType Directory store | Out-Null
+        'old' | Set-Content store\a.txt
+        Move-AsLink .\a.txt .\store\a.txt -Force -Resolve | Out-Null
+        ShouldEq (Get-Content (Join-Path $d 'a.txt')) 'new'
+    } -skip (-not $canSymlink)
+
+    It '56. (D7) HKLM:\ (non-FileSystem PSDrive) is refused with clear error' {
+        $origLoc = Get-Location
+        try {
+            Set-Location HKLM:\SOFTWARE -ErrorAction Stop
+            $threw = $false
+            try { Move-AsLink .\foo .\bar } catch {
+                $threw = $true
+                if ($_.Exception.Message -notmatch 'not a filesystem path') {
+                    throw "error message should mention 'not a filesystem path'; got: $($_.Exception.Message)"
+                }
+            }
+            if (-not $threw) { throw 'should have thrown' }
+        } finally { Set-Location $origLoc }
+    } -skip (-not $onWindows)
+
+    It '57. (A15) junction as source is moved (not dereferenced)' {
+        $d = NewCase '57'
+        New-Item -ItemType Directory target | Out-Null
+        'x' | Set-Content target\inner
+        New-Item -ItemType Junction -Path junc -Target (Join-Path $d 'target') | Out-Null
+        Move-AsLink .\junc .\store\junc | Out-Null
+        # The real 'target' should be untouched (junction was moved, not dereferenced).
+        if (-not (Test-Path (Join-Path $d 'target\inner'))) {
+            throw 'target should still exist at original location'
+        }
+        # store\junc should exist (either as a junction or symlink — both acceptable).
+        if (-not (Test-Path (Join-Path $d 'store\junc'))) {
+            throw 'missing store\junc'
+        }
+    } -skip (-not ($onWindows -and $canSymlink))
+
 } finally {
     Set-Location $origCwd
     if (Test-Path $root) { Remove-Item -Recurse -Force $root -ErrorAction SilentlyContinue }

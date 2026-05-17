@@ -476,6 +476,27 @@ Move-AsLink -Bogus a b
 | 36   | Trailing slash on dir source + existing dir dest with trailing slash (nest) |
 | 37   | Trailing slash on dir source + exact new name dest (rename)      |
 | 38   | Trailing slash on dir source + non-existent dest with trailing slash (auto-create + nest) |
+| 39   | Path with spaces (quoted)                                        |
+| 40   | Unicode in filename                                              |
+| 41   | Hardlink as source (moves like a regular file)                   |
+| 42   | Empty file                                                       |
+| 43   | Empty directory                                                  |
+| 44   | Dest exists as symlink — refused without `--force`/`-Force`      |
+| 45   | `--force`/`-Force` with same-path src/dst still refused (same-path check fires first) |
+| 46   | Source = parent of destination (self-referential, rejected)      |
+| 47   | Source nested inside dest dir — same-path collision detected     |
+| 48   | Glob pattern as source resolved literally (no internal expansion) |
+| 49   | Whitespace-only source path rejected                             |
+| 50   | Extra positional arguments rejected with exit 64                 |
+| 51   | Tilde in source path (parser-level expansion)                    |
+| 52   | (pwsh only) `-Resolve` canonicalizes through symlinked parent    |
+| 52 (bash) | Filename containing newline (POSIX edge case)                  |
+| 53   | (pwsh only) `-WhatIf` does not actually move                     |
+| 53 (bash) | Flag combo `-f --resolve` together                              |
+| 54   | (pwsh only) Named parameters `-Path` / `-Destination`            |
+| 55   | (pwsh only) `-Force` + `-Resolve` combined                       |
+| 56   | (pwsh only) `HKLM:\` non-FileSystem PSDrive refused              |
+| 57   | (pwsh only) Junction as source (Windows; moved, not dereferenced) |
 
 ---
 
