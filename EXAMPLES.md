@@ -72,7 +72,10 @@ mvln ~/Downloads/big.bin /mnt/bulk/big.bin
 ```powershell
 Move-AsLink ~\Downloads\big.bin D:\bulk\big.bin
 ```
-**Result:** the shell parser expands `~` to your home directory **before** `mvln` / `Move-AsLink` sees the argument. The function only sees the resolved absolute path. No special handling required from the function side.
+**Result:** `~` resolves to your home directory.
+
+- **In bash/zsh**, the shell parser expands `~` before `mvln` sees the argument, so no special handling is needed from the function.
+- **In PowerShell**, the parser does **not** expand `~` automatically — only certain cmdlets (`Get-Content`, `Resolve-Path`, etc.) do so via the FileSystem provider's `Home` property. `Move-AsLink` expands `~` explicitly at the start of path resolution so the same syntax works regardless of shell. `[case 51]`
 
 ### 1.7 After navigating with `cd` / `Set-Location`
 

@@ -42,6 +42,22 @@ function Move-AsLink {
     }
     $cwd = $cwdLocation.ProviderPath
 
+    # Expand ~ to the user's home directory. PowerShell's parser does NOT
+    # do this automatically — only certain cmdlets (Get-Content, Resolve-Path,
+    # etc.) handle ~ via the FileSystem provider's Home property. Because we
+    # build paths with raw [IO.Path] APIs (which treat ~ as a literal directory
+    # name), we have to expand it ourselves to match the user-facing convention
+    # that ~ means "home" regardless of shell. Bash gets this via the parser.
+    function ExpandTilde([string] $p) {
+        if ($p -eq '~') { return (Get-PSProvider FileSystem).Home }
+        if ($p.StartsWith('~/') -or $p.StartsWith('~\')) {
+            return Join-Path (Get-PSProvider FileSystem).Home $p.Substring(2)
+        }
+        return $p
+    }
+    $Path        = ExpandTilde $Path
+    $Destination = ExpandTilde $Destination
+
     function ToAbs([string] $p) {
         if ([IO.Path]::IsPathRooted($p)) { [IO.Path]::GetFullPath($p) }
         else { [IO.Path]::GetFullPath([IO.Path]::Combine($cwd, $p)) }
