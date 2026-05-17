@@ -166,3 +166,74 @@ rc=$?
 unset -f cd
 [ "$rc" -eq 0 ] && [ -L a.txt ] && [ "$(readlink a.txt)" = "$d/store/a.txt" ] \
   && ok || fail "custom cd side effect corrupted path resolution (rc=$rc)"
+
+# --- README canonical destination patterns (cases 22-27) ---
+# Each case below pins one of the four documented patterns or the rename-vs-nest
+# trap. The earlier file/dir cases (1, 2, 3, 14) used same-basename sources and
+# therefore could not distinguish "rename" from "nest"; the cases below use
+# distinct basenames so the two interpretations produce different paths.
+
+# 22. Pattern 1: file -> exact NEW name (rename during move)
+it "22. file -> exact new name renames during move"
+d="$(case_dir 22)"; cd "$d"; printf 'hello\n' > a.txt
+mvln a.txt store/notes.txt >/dev/null
+[ -L a.txt ] && [ -f store/notes.txt ] && [ ! -e store/a.txt ] \
+  && [ "$(readlink a.txt)" = "$d/store/notes.txt" ] \
+  && [ "$(cat store/notes.txt)" = "hello" ] \
+  && ok || fail "rename-to-new-name did not produce store/notes.txt"
+
+# 23. Pattern 3: directory -> exact NEW name in non-existent parent
+it "23. dir -> exact new name in non-existent parent renames during move"
+d="$(case_dir 23)"; cd "$d"; mkdir src && printf 'y\n' > src/inner
+mvln src archive/src-2026 >/dev/null
+[ -L src ] && [ -d archive/src-2026 ] && [ ! -e archive/src ] \
+  && [ "$(readlink src)" = "$d/archive/src-2026" ] \
+  && [ "$(cat src/inner)" = "y" ] \
+  && ok || fail "dir rename to new name failed"
+
+# 24. Pattern 4a: directory into existing dir, no trailing slash (nest)
+it "24. dir -> existing dir (no trailing slash) nests under basename"
+d="$(case_dir 24)"; cd "$d"; mkdir src && printf 'z\n' > src/inner; mkdir bag
+mvln src bag >/dev/null
+[ -L src ] && [ -d bag/src ] && [ -f bag/src/inner ] \
+  && [ "$(readlink src)" = "$d/bag/src" ] \
+  && [ "$(cat src/inner)" = "z" ] \
+  && ok || fail "dir-into-existing-dir did not nest"
+
+# 25. Pattern 4b: directory into dir via trailing slash (dir absent -> auto-create + nest)
+it "25. dir -> trailing-slash dest nests under basename even if dir absent"
+d="$(case_dir 25)"; cd "$d"; mkdir src && printf 'w\n' > src/inner
+mvln src bag/ >/dev/null
+[ -L src ] && [ -d bag/src ] && [ -f bag/src/inner ] \
+  && [ "$(readlink src)" = "$d/bag/src" ] \
+  && ok || fail "trailing-slash on dir did not auto-create + nest"
+
+# 26a. Rename-vs-nest trap: same command, dest absent -> rename
+it "26a. dir -> non-existent target renames to that name (no slash)"
+d="$(case_dir 26a)"; cd "$d"; mkdir src && printf 'a\n' > src/inner
+mvln src bag >/dev/null
+[ -L src ] && [ -d bag ] && [ -f bag/inner ] && [ ! -e bag/src ] \
+  && [ "$(readlink src)" = "$d/bag" ] \
+  && ok || fail "rename-to-bag did not produce bag/inner"
+
+# 26b. Rename-vs-nest trap: same command, dest present -> nest
+it "26b. dir -> existing dir target nests under basename (no slash)"
+d="$(case_dir 26b)"; cd "$d"; mkdir src && printf 'b\n' > src/inner; mkdir bag
+mvln src bag >/dev/null
+[ -L src ] && [ -d bag/src ] && [ -f bag/src/inner ] \
+  && [ "$(readlink src)" = "$d/bag/src" ] \
+  && ok || fail "nest-into-bag did not produce bag/src/inner"
+
+# 27a. Trailing slash is unambiguous: 'src bag/' nests whether bag exists or not
+it "27a. dir -> 'bag/' with bag absent nests after auto-create"
+d="$(case_dir 27a)"; cd "$d"; mkdir src && printf 'c\n' > src/inner
+mvln src bag/ >/dev/null
+[ -L src ] && [ -d bag/src ] && [ -f bag/src/inner ] \
+  && ok || fail "trailing-slash + absent did not auto-create + nest"
+
+# 27b. Trailing slash with existing bag also nests
+it "27b. dir -> 'bag/' with bag present nests as bag/src"
+d="$(case_dir 27b)"; cd "$d"; mkdir src && printf 'd\n' > src/inner; mkdir bag
+mvln src bag/ >/dev/null
+[ -L src ] && [ -d bag/src ] && [ -f bag/src/inner ] \
+  && ok || fail "trailing-slash + present did not nest"

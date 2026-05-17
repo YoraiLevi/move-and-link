@@ -205,6 +205,93 @@ try {
         } finally { $fs.Dispose() }
     } -skip (-not ($onWindows -and $canSymlink))
 
+    # --- README canonical destination patterns (cases 22-27) ---
+    # Pin the four documented patterns + the rename-vs-nest trap. The earlier
+    # file/dir cases (1, 2, 3, 14) used same-basename sources and could not
+    # distinguish "rename" from "nest"; these use distinct basenames.
+
+    It '22. file -> exact new name renames during move' {
+        $d = NewCase '22'
+        'hello' | Set-Content a.txt
+        Move-AsLink .\a.txt .\store\notes.txt | Out-Null
+        ShouldEq (LinkType (Join-Path $d 'a.txt')) 'SymbolicLink'
+        ShouldEq (LinkTarget (Join-Path $d 'a.txt')) (Join-Path $d 'store\notes.txt')
+        if (Test-Path (Join-Path $d 'store\a.txt')) { throw 'unexpected store\a.txt' }
+        if (-not (Test-Path (Join-Path $d 'store\notes.txt'))) { throw 'missing store\notes.txt' }
+        ShouldEq (Get-Content (Join-Path $d 'store\notes.txt')) 'hello'
+    } -skip (-not $canSymlink)
+
+    It '23. dir -> exact new name in non-existent parent renames during move' {
+        $d = NewCase '23'
+        New-Item -ItemType Directory src | Out-Null
+        'y' | Set-Content src\inner
+        Move-AsLink .\src .\archive\src-2026 | Out-Null
+        ShouldEq (LinkType (Join-Path $d 'src')) 'SymbolicLink'
+        ShouldEq (LinkTarget (Join-Path $d 'src')) (Join-Path $d 'archive\src-2026')
+        if (Test-Path (Join-Path $d 'archive\src')) { throw 'unexpected archive\src' }
+        if (-not (Test-Path (Join-Path $d 'archive\src-2026\inner'))) {
+            throw 'missing archive\src-2026\inner'
+        }
+    } -skip (-not $canSymlink)
+
+    It '24. dir -> existing dir (no trailing slash) nests under basename' {
+        $d = NewCase '24'
+        New-Item -ItemType Directory src | Out-Null
+        'z' | Set-Content src\inner
+        New-Item -ItemType Directory bag | Out-Null
+        Move-AsLink .\src .\bag | Out-Null
+        ShouldEq (LinkType (Join-Path $d 'src')) 'SymbolicLink'
+        ShouldEq (LinkTarget (Join-Path $d 'src')) (Join-Path $d 'bag\src')
+        if (-not (Test-Path (Join-Path $d 'bag\src\inner'))) { throw 'missing bag\src\inner' }
+    } -skip (-not $canSymlink)
+
+    It '25. dir -> trailing-slash dest nests under basename even if dir absent' {
+        $d = NewCase '25'
+        New-Item -ItemType Directory src | Out-Null
+        'w' | Set-Content src\inner
+        Move-AsLink .\src .\bag\ | Out-Null
+        ShouldEq (LinkType (Join-Path $d 'src')) 'SymbolicLink'
+        ShouldEq (LinkTarget (Join-Path $d 'src')) (Join-Path $d 'bag\src')
+        if (-not (Test-Path (Join-Path $d 'bag\src\inner'))) { throw 'missing bag\src\inner' }
+    } -skip (-not $canSymlink)
+
+    It '26a. dir -> non-existent target renames to that name (no slash)' {
+        $d = NewCase '26a'
+        New-Item -ItemType Directory src | Out-Null
+        'a' | Set-Content src\inner
+        Move-AsLink .\src .\bag | Out-Null
+        ShouldEq (LinkTarget (Join-Path $d 'src')) (Join-Path $d 'bag')
+        if (Test-Path (Join-Path $d 'bag\src')) { throw 'unexpected bag\src' }
+        if (-not (Test-Path (Join-Path $d 'bag\inner'))) { throw 'missing bag\inner' }
+    } -skip (-not $canSymlink)
+
+    It '26b. dir -> existing dir target nests under basename (no slash)' {
+        $d = NewCase '26b'
+        New-Item -ItemType Directory src | Out-Null
+        'b' | Set-Content src\inner
+        New-Item -ItemType Directory bag | Out-Null
+        Move-AsLink .\src .\bag | Out-Null
+        ShouldEq (LinkTarget (Join-Path $d 'src')) (Join-Path $d 'bag\src')
+        if (-not (Test-Path (Join-Path $d 'bag\src\inner'))) { throw 'missing bag\src\inner' }
+    } -skip (-not $canSymlink)
+
+    It "27a. dir -> 'bag\' with bag absent nests after auto-create" {
+        $d = NewCase '27a'
+        New-Item -ItemType Directory src | Out-Null
+        'c' | Set-Content src\inner
+        Move-AsLink .\src .\bag\ | Out-Null
+        if (-not (Test-Path (Join-Path $d 'bag\src\inner'))) { throw 'missing bag\src\inner' }
+    } -skip (-not $canSymlink)
+
+    It "27b. dir -> 'bag\' with bag present nests as bag\src" {
+        $d = NewCase '27b'
+        New-Item -ItemType Directory src | Out-Null
+        'd' | Set-Content src\inner
+        New-Item -ItemType Directory bag | Out-Null
+        Move-AsLink .\src .\bag\ | Out-Null
+        if (-not (Test-Path (Join-Path $d 'bag\src\inner'))) { throw 'missing bag\src\inner' }
+    } -skip (-not $canSymlink)
+
 } finally {
     Set-Location $origCwd
     if (Test-Path $root) { Remove-Item -Recurse -Force $root -ErrorAction SilentlyContinue }

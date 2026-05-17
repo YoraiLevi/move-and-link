@@ -49,6 +49,69 @@ On Windows, symlink creation requires either [Developer Mode](https://learn.micr
 - Strict symlink only — no junction or hardlink fallback. If symlink creation isn't permitted, mvln aborts before moving anything; enable Developer Mode (link above) or run the shell elevated.
 - Special files (FIFO, socket, device) are rejected.
 
+## The four destination patterns
+
+Every `mvln` / `Move-AsLink` invocation is one of these four shapes. The single rule that distinguishes them: **if the destination ends with `/` (or `\`) OR is an existing real directory, the source's basename is appended; otherwise the destination is used as-is.**
+
+### 1. File → exact new path (rename during move)
+
+```bash
+mvln a.txt store/notes.txt        # final: store/notes.txt
+```
+```powershell
+Move-AsLink .\a.txt .\store\notes.txt
+```
+
+Destination has no trailing separator and `store/notes.txt` does not exist as a directory, so it is the literal new path. `store/` is auto-created. **Tested by case 22.**
+
+### 2. File → into a directory (nested, not overwriting)
+
+```bash
+mvln a.txt bag/                   # final: bag/a.txt — trailing slash is the unambiguous form
+mvln a.txt bag                    # same result IF bag already exists as a directory
+```
+```powershell
+Move-AsLink .\a.txt .\bag\
+Move-AsLink .\a.txt .\bag         # same result IF bag already exists
+```
+
+The trailing separator (or the fact that `bag` exists) flips the script into "container" mode; the file lands at `bag/a.txt` and `bag` itself is untouched. **Tested by cases 3 and 14.**
+
+### 3. Directory → exact new path (rename, parent auto-created)
+
+```bash
+mvln src archive/src-2026         # final: archive/src-2026/
+```
+```powershell
+Move-AsLink .\src .\archive\src-2026
+```
+
+`archive/src-2026` doesn't exist and has no trailing separator, so it is the new directory's identity. `archive/` is auto-created. **Tested by case 23.**
+
+### 4. Directory → into a directory (nested)
+
+```bash
+mvln src bag/                     # final: bag/src/ — trailing slash always nests
+mvln src bag                      # same result IF bag already exists as a directory
+```
+```powershell
+Move-AsLink .\src .\bag\
+Move-AsLink .\src .\bag           # same result IF bag already exists
+```
+
+Same container rule as pattern 2. **Tested by cases 24, 25, 27a, 27b.**
+
+### The rename-vs-nest trap
+
+Patterns 3 and 4 collapse to **the same command** (`mvln src bag`) when the trailing separator is omitted. The outcome flips based on whether `bag` already exists:
+
+| Command         | `bag` absent              | `bag` exists as a real directory |
+|-----------------|---------------------------|-----------------------------------|
+| `mvln src bag`  | rename → `bag/`           | nest → `bag/src/`                |
+| `mvln src bag/` | auto-create + nest → `bag/src/` | nest → `bag/src/`         |
+
+**Habit:** if you mean *nest*, always include the trailing separator. The behavior is then identical regardless of whether the destination directory already exists. **Tested by cases 26a, 26b, 27a, 27b.**
+
 ## Examples
 
 ### Move a single config file to a shared dotfiles directory
@@ -217,11 +280,19 @@ Move-AsLink .\dist E:\cdn-staging\my-app-dist -Resolve
 
 ## Tests
 
-CI runs ~21 edge cases across `bash`, `zsh`, and `pwsh` on Ubuntu, macOS, and Windows,
-including a Linux cross-filesystem (`/dev/shm` tmpfs) case and (on Windows) a
-partial-removal-with-open-handle case.
+CI runs ~28 edge cases across `bash`, `zsh`, and `pwsh` on Ubuntu, macOS, and Windows,
+including a Linux cross-filesystem (`/dev/shm` tmpfs) case, (on Windows) a
+partial-removal-with-open-handle case, and the four canonical destination patterns
+documented above.
 
-Run locally:
+**CI is the authoritative validator.** Local test runs can produce misleading
+results on Windows hosts (MSYS bash treats `ln -s` as a copy without
+`MSYS=winsymlinks:nativestrict`; `[IO.Path]` in pwsh resolves `.\` and `\`
+differently on Linux/macOS than on Windows; zsh is rarely installed locally).
+For contributors: push to a branch and read the CI matrix. See `CLAUDE.md` for
+the project's testing policy.
+
+For an end-user install spot-check (not a contributor verification):
 
     bash tests/test-mvln.bash
     zsh  tests/test-mvln.zsh
