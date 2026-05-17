@@ -114,7 +114,9 @@ Patterns 3 and 4 collapse to **the same command** (`mvln src bag`) when the trai
 
 ## Examples
 
-### Move a single config file to a shared dotfiles directory
+These four examples cover the everyday cases. For the comprehensive reference — every source path form, every flag, every realistic use case, and the error patterns the function intentionally rejects — see **[EXAMPLES.md](EXAMPLES.md)**.
+
+### Symlink a config file into a dotfiles repo
 
 ```bash
 mvln ~/.gitconfig ~/dotfiles/git/gitconfig
@@ -146,21 +148,7 @@ Move-AsLink .\node_modules D:\scratch\my-app\node_modules
 # D:\scratch\my-app\node_modules
 ```
 
-### Relocate a Steam game off the SSD without re-installing
-
-```bash
-mvln ~/.steam/steam/steamapps/common/Cyberpunk2077 /mnt/games-hdd/Cyberpunk2077
-# Steam still finds the game via the symlink; ~80 GB freed on the SSD.
-```
-
-```powershell
-Move-AsLink "C:\Program Files (x86)\Steam\steamapps\common\Cyberpunk 2077" `
-            "D:\Games\Cyberpunk 2077"
-Get-Item "C:\Program Files (x86)\Steam\steamapps\common\Cyberpunk 2077" |
-    Select-Object LinkType, Target
-```
-
-### Move the `Downloads` folder to an external drive (using a trailing-slash destination)
+### Move the `Downloads` folder to an external drive (trailing-slash destination)
 
 ```bash
 mvln ~/Downloads /media/external/
@@ -189,63 +177,16 @@ Move-AsLink .\llama-70b-v2 D:\ml-cache\llama-70b -Force
 # D:\ml-cache\llama-70b
 ```
 
-### Move a 200 GB Hugging Face cache to spinning rust (cross-volume)
+### More examples
 
-```bash
-mvln ~/.cache/huggingface /mnt/bulk-hdd/huggingface
-du -sh ~/.cache/huggingface  # follows the symlink; reports the moved size
-readlink ~/.cache/huggingface
-# /mnt/bulk-hdd/huggingface
-# HF_HOME stays unchanged; transformers/datasets keep finding everything.
-```
+See **[EXAMPLES.md](EXAMPLES.md)** for:
 
-```powershell
-Move-AsLink $HOME\.cache\huggingface F:\bulk\huggingface
-Get-ChildItem $HOME\.cache\huggingface | Measure-Object -Property Length -Sum
-# Reads through the link to the new volume.
-```
-
-### Offload a Docker named volume's data directory (cross-volume)
-
-```bash
-sudo systemctl stop docker
-sudo mvln /var/lib/docker/volumes/postgres_data /mnt/db-ssd/postgres_data
-sudo systemctl start docker
-ls -la /var/lib/docker/volumes/postgres_data
-# Docker resolves through the symlink; container mounts work as before.
-```
-
-```powershell
-Stop-Service com.docker.service
-Move-AsLink "C:\ProgramData\Docker\volumes\postgres_data" `
-            "D:\docker-data\postgres_data"
-Start-Service com.docker.service
-```
-
-### Move through a symlinked parent (`--resolve` to opt out of the default)
-
-```bash
-# ~/projects is itself a symlink to /mnt/work/projects.
-# By default, mvln keeps the parent path you typed (logical):
-cd ~/projects/my-app
-mvln build ~/scratch/my-app-build
-readlink build
-# /home/you/scratch/my-app-build   (logical: parent symlink preserved)
-
-# Use --resolve when you want the *real* underlying path baked in:
-mvln --resolve dist /mnt/cdn-staging/my-app-dist
-readlink dist
-# /mnt/cdn-staging/my-app-dist   (canonicalized, no symlinks in the path)
-```
-
-```powershell
-Set-Location $HOME\projects\my-app
-Move-AsLink .\build $HOME\scratch\my-app-build
-(Get-Item .\build).Target
-
-Move-AsLink .\dist E:\cdn-staging\my-app-dist -Resolve
-(Get-Item .\dist).Target
-```
+- **Source path syntax** — absolute, bare-name, dot-relative, `..`, `~`, mixed `/` and `\` separators on Windows, after `cd` / `Set-Location` / `Push-Location`
+- **Flags in depth** — `--force` / `-Force`, `--resolve` / `-Resolve`, `--` POSIX terminator
+- **Source-type handling** — files, directories, existing symlinks (preserved, not dereferenced), dangling symlinks, filenames starting with `-`
+- **Recipes** — Steam game offload, Hugging Face cache to bulk storage, Docker volume relocation, build artifacts on scratch, symlinked-parent `--resolve` workflow
+- **Error patterns** — what `mvln` / `Move-AsLink` refuse to do and why (source missing, same path, dest exists without `--force`, special files, non-FileSystem PSDrive in pwsh)
+- **Cross-reference** — table mapping every documented form to the test case that pins it
 
 <details>
 <summary><b>Caveats</b> (click to expand)</summary>
