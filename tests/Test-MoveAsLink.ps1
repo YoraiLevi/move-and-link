@@ -48,10 +48,14 @@ try {
         $d = Join-Path $root "case-$n"
         New-Item -ItemType Directory -Path $d -Force | Out-Null
         Set-Location $d
-        [Environment]::CurrentDirectory = $d
-        # On macOS, /var is a symlink to /private/var; getcwd() returns the canonical form
-        # after chdir(). Return that canonical form so assertions match Move-AsLink's output.
-        return [Environment]::CurrentDirectory
+        # Deliberately do NOT set [Environment]::CurrentDirectory. Real PowerShell users
+        # navigate via Set-Location / cd, which updates $PWD (the PSDrive cwd) but leaves
+        # [Environment]::CurrentDirectory (the .NET filesystem cwd) at whatever it was
+        # when the session started. A previous version of this harness pre-synced the two,
+        # which masked a real bug where Move-AsLink resolved relative paths against the
+        # session-start dir instead of the user's actual location. We mirror real usage
+        # so the bug surfaces in tests.
+        return (Get-Location).ProviderPath
     }
 
     $onWindows = ($IsWindows -or $env:OS -eq 'Windows_NT')
@@ -290,6 +294,76 @@ try {
         New-Item -ItemType Directory bag | Out-Null
         Move-AsLink .\src .\bag\ | Out-Null
         if (-not (Test-Path (Join-Path $d 'bag\src\inner'))) { throw 'missing bag\src\inner' }
+    } -skip (-not $canSymlink)
+
+    # --- User-typed-syntax cases (28-35) ---
+    # Pin the syntax real users type when their PSDrive cwd has diverged from
+    # [Environment]::CurrentDirectory (i.e., they navigated via Set-Location).
+    # The NewCase harness above no longer pre-syncs the two, so these tests
+    # exercise the same resolution path users hit in interactive shells.
+
+    It '28. (A) dot-relative source file resolves against PSDrive cwd' {
+        $d = NewCase '28'
+        'hello' | Set-Content original-file
+        Move-AsLink .\original-file .\dir\ | Out-Null
+        ShouldEq (LinkType (Join-Path $d 'original-file')) 'SymbolicLink'
+        ShouldEq (Get-Content (Join-Path $d 'dir\original-file')) 'hello'
+    } -skip (-not $canSymlink)
+
+    It '29. (A) dot-relative source directory resolves against PSDrive cwd' {
+        $d = NewCase '29'
+        New-Item -ItemType Directory original-dir | Out-Null
+        'x' | Set-Content original-dir\inner
+        Move-AsLink .\original-dir .\dir\ | Out-Null
+        if (-not (Test-Path (Join-Path $d 'dir\original-dir\inner'))) {
+            throw 'missing dir\original-dir\inner'
+        }
+    } -skip (-not $canSymlink)
+
+    It '30. (B) bare-name source resolves against PSDrive cwd' {
+        $d = NewCase '30'
+        'hello' | Set-Content original-file
+        Move-AsLink original-file dir\ | Out-Null
+        ShouldEq (Get-Content (Join-Path $d 'dir\original-file')) 'hello'
+    } -skip (-not $canSymlink)
+
+    It '31. (C) mixed forward/backslash separators (verbatim user-reported syntax)' {
+        $d = NewCase '31'
+        'hello' | Set-Content original-file
+        Move-AsLink .\original-file ./dir/ | Out-Null
+        ShouldEq (Get-Content (Join-Path $d 'dir\original-file')) 'hello'
+    } -skip (-not ($onWindows -and $canSymlink))
+
+    # 32. (D) Tilde deliberately not tested directly. PowerShell expands ~ in the
+    # parser before the function receives the string; Move-AsLink only sees the
+    # already-resolved absolute path, which case 34 (F) exercises.
+
+    It '33. (E) parent-directory references resolve from PSDrive cwd' {
+        $d = NewCase '33'
+        'hello' | Set-Content original-file
+        New-Item -ItemType Directory subdir | Out-Null
+        Set-Location subdir
+        Move-AsLink ..\original-file ..\dir\ | Out-Null
+        Set-Location $d
+        ShouldEq (Get-Content (Join-Path $d 'dir\original-file')) 'hello'
+    } -skip (-not $canSymlink)
+
+    It '34. (F) absolute source path works without harness cwd sync' {
+        $d = NewCase '34'
+        'hello' | Set-Content original-file
+        Move-AsLink (Join-Path $d 'original-file') (Join-Path $d 'dir\original-file') | Out-Null
+        ShouldEq (Get-Content (Join-Path $d 'dir\original-file')) 'hello'
+    } -skip (-not $canSymlink)
+
+    It '35. (G) Push-Location updates PSDrive cwd for relative resolution' {
+        $d = NewCase '35'
+        'hello' | Set-Content original-file
+        Set-Location $root
+        Push-Location $d
+        try {
+            Move-AsLink .\original-file .\dir\ | Out-Null
+        } finally { Pop-Location }
+        ShouldEq (Get-Content (Join-Path $d 'dir\original-file')) 'hello'
     } -skip (-not $canSymlink)
 
 } finally {

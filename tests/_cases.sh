@@ -237,3 +237,61 @@ d="$(case_dir 27b)"; cd "$d"; mkdir src && printf 'd\n' > src/inner; mkdir bag
 mvln src bag/ >/dev/null
 [ -L src ] && [ -d bag/src ] && [ -f bag/src/inner ] \
   && ok || fail "trailing-slash + present did not nest"
+
+# --- User-typed-syntax cases (28-35) ---
+# Shell parity for the pwsh user-syntax tests. POSIX shells have one notion of
+# cwd (getcwd) so they don't suffer the pwsh PSDrive-vs-.NET divergence bug,
+# but we pin the same syntax surface so neither implementation can drift away
+# from the documented user experience without CI catching it.
+
+# 28. (A) Dot-relative source file after cd
+it "28. (A) dot-relative source file resolves against shell cwd"
+d="$(case_dir 28)"; cd "$d"; printf 'hello\n' > original-file
+mvln ./original-file ./dir/ >/dev/null
+[ -L original-file ] && [ -f dir/original-file ] \
+  && [ "$(cat dir/original-file)" = "hello" ] \
+  && ok || fail "dot-relative source did not resolve"
+
+# 29. (A) Dot-relative source directory after cd
+it "29. (A) dot-relative source directory resolves against shell cwd"
+d="$(case_dir 29)"; cd "$d"; mkdir original-dir && printf 'x\n' > original-dir/inner
+mvln ./original-dir ./dir/ >/dev/null
+[ -L original-dir ] && [ -d dir/original-dir ] && [ -f dir/original-dir/inner ] \
+  && ok || fail "dot-relative source dir did not resolve"
+
+# 30. (B) Bare-name source
+it "30. (B) bare-name source resolves against shell cwd"
+d="$(case_dir 30)"; cd "$d"; printf 'hello\n' > original-file
+mvln original-file dir/ >/dev/null
+[ -L original-file ] && [ -f dir/original-file ] \
+  && ok || fail "bare-name source did not resolve"
+
+# 31. (C) Skipped on POSIX shells: \ is a literal filename character on Linux/macOS,
+# not a path separator. Mixed-separator support is Windows/pwsh-specific.
+
+# 32. (D) Tilde — shell parser-level expansion; not mvln's responsibility. Skipped.
+
+# 33. (E) Parent-directory references
+it "33. (E) parent-directory references resolve from shell cwd"
+d="$(case_dir 33)"; cd "$d"; printf 'hello\n' > original-file
+mkdir subdir; cd subdir
+mvln ../original-file ../dir/ >/dev/null
+cd "$d"
+[ -L original-file ] && [ -f dir/original-file ] \
+  && ok || fail "parent-ref did not resolve"
+
+# 34. (F) Absolute source path
+it "34. (F) absolute source path works"
+d="$(case_dir 34)"; cd "$d"; printf 'hello\n' > original-file
+mvln "$d/original-file" "$d/dir/original-file" >/dev/null
+[ -L original-file ] && [ -f dir/original-file ] \
+  && ok || fail "absolute source did not resolve"
+
+# 35. (G) After navigating away and back, relative resolution still works
+it "35. (G) after cd away and back, relative resolution still works"
+d="$(case_dir 35)"; cd "$d"; printf 'hello\n' > original-file
+cd "$ROOT"
+cd "$d"
+mvln ./original-file ./dir/ >/dev/null
+[ -L original-file ] && [ -f dir/original-file ] \
+  && ok || fail "cd-away-then-back did not preserve resolution"
