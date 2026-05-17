@@ -511,26 +511,22 @@ try {
 
     It '51. (A5) tilde in source path is parser-expanded before function sees it' {
         $d = NewCase '51'
-        $origHome = $env:USERPROFILE
-        $origHomeUnix = $env:HOME
+        # PowerShell's ~ is resolved by the FileSystem provider's Home property,
+        # NOT by $env:USERPROFILE / $env:HOME. To mock ~ for this test, mutate
+        # the provider's Home directly; restore in finally so other tests aren't
+        # affected.
+        $fsProvider = Get-PSProvider FileSystem
+        $origProviderHome = $fsProvider.Home
         try {
-            $env:USERPROFILE = $d
-            $env:HOME = $d
-            'x' | Set-Content (Join-Path $d 'tilde.txt')
-            # Pwsh's path provider resolves ~ via Get-PSDrive Home; this varies.
-            # Use Resolve-Path to confirm ~ maps to $d in this context, otherwise skip.
-            $tildeAbs = (Resolve-Path -Path '~/tilde.txt' -ErrorAction SilentlyContinue).Path
-            if ($tildeAbs -and ($tildeAbs -eq (Join-Path $d 'tilde.txt'))) {
-                Move-AsLink ~/tilde.txt (Join-Path $d 'store\tilde.txt') | Out-Null
-                if (-not (Test-Path (Join-Path $d 'store\tilde.txt'))) {
-                    throw 'missing store\tilde.txt'
-                }
+            $fsProvider.Home = $d
+            'hello' | Set-Content (Join-Path $d 'tilde.txt')
+            Move-AsLink ~/tilde.txt (Join-Path $d 'store\tilde.txt') | Out-Null
+            if (-not (Test-Path (Join-Path $d 'store\tilde.txt'))) {
+                throw 'missing store\tilde.txt'
             }
-            # If pwsh's ~ didn't follow our env override, the test is effectively
-            # a no-op — pwsh's tilde resolution is provider-tied, not env-tied.
+            ShouldEq (Get-Content (Join-Path $d 'store\tilde.txt')) 'hello'
         } finally {
-            $env:USERPROFILE = $origHome
-            $env:HOME = $origHomeUnix
+            $fsProvider.Home = $origProviderHome
         }
     } -skip (-not $canSymlink)
 
